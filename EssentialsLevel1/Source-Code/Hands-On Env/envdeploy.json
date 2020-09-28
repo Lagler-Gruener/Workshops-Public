@@ -1,0 +1,879 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "DeploymentforStudent": {
+        "type": "string"
+      },
+      "DeploymentType": {
+        "type": "string",
+        "allowedValues": [
+          "NetworkOnly",
+          "FullDeployment"
+        ]
+      },
+      "VMWEName": {
+        "type": "string",
+        "defaultValue": "demovmwe01"
+      },
+      "VMEUSName": {
+        "type": "string",
+        "defaultValue": "demovmeus01"
+      },
+      "ClientSourcePIP": {
+        "type": "string"
+      },
+      "VMadminusername": {
+        "type": "string",
+        "defaultValue": "azfundamentals"
+      },
+      "VMadminPassword": {
+        "type": "SecureString",
+        "defaultValue": "DemoAZFundamentals01"
+      }
+    },
+    "variables": {
+      "virtualNetworks_vnetwe_name": "[concat('vnetwe',parameters('DeploymentforStudent'))]",
+      "virtualNetworks_vneteus_name": "[concat('vneteus',parameters('DeploymentforStudent'))]",
+      "networkSecurityGroups_NSGBackendWE_name": "[concat('NSGBackendWE', parameters('DeploymentforStudent'))]",
+      "networkSecurityGroups_NSGBackendEUS_name": "[concat('NSGBackendEUS', parameters('DeploymentforStudent'))]",
+      "networkSecurityGroups_NSGFrontendWE_name": "[concat('NSGFrontendWE',parameters('DeploymentforStudent'))]",
+      "networkSecurityGroups_NSGFrontendEUS_name": "[concat('NSGFrontendEUS',parameters('DeploymentforStudent'))]",
+      "trafficManagerProfiles_demotraffikmanager_name": "[concat('demotraffikmanager',parameters('DeploymentforStudent'))]",
+      "publicIPAddresses_demovmwe_ip_name": "[concat(parameters('VMWEName'),parameters('DeploymentforStudent'), 'pip01')]",
+      "publicIPAddresses_demovmeus_ip_name": "[concat(parameters('VMEUSName'),parameters('DeploymentforStudent'), 'pip01')]",
+      "nicname_vm_we": "[concat(parameters('VMWEName'),parameters('DeploymentforStudent'), 'nic01')]",
+      "nicname_vm_eus": "[concat(parameters('VMEUSName'),parameters('DeploymentforStudent'), 'nic01')]",
+  
+      "demovmwe01VnetID": "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vnetwe_name'))]",
+      "demovmwe01SubnetRef": "[concat(variables('demovmwe01VnetID'), '/subnets/', 'Frontend')]",
+      "demovmEUSVnetID": "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vneteus_name'))]",
+      "demovmEUSSubnetRef": "[concat(variables('demovmEUSVnetID'), '/subnets/', 'Frontend')]",
+  
+      "dscurl": "DSCURL",
+      "dsckey": "DSCKEY",
+      "configurationModeFrequencyMins": "15",
+      "refreshFrequencyMins": "30",
+  
+      "workspaceResourceId": "/subscriptions/bb8e13db-cd67-4923-8aea-a4d66b65cf84/resourcegroups/acp-demo-level1-ws-monitoring/providers/microsoft.operationalinsights/workspaces/ACP-Demo-Level1-Monitoring",
+  
+      "VMRecoveryServiceVaultResgroup": "ACP-Demo-Level1-WS-Backup",
+      "VMRecoveryServiceVaultName": "ACP-Demo-Level1-Backup",
+      "VMRecoveryServiceVaultNameEUS": "ACP-Demo-Level1-Backup-EUS2",
+      "backupFabric": "Azure",
+      "v2VmType": "Microsoft.Compute/virtualMachines",
+      "v2VmContainer": "iaasvmcontainer;iaasvmcontainerv2;",
+      "v2Vm": "vm;iaasvmcontainerv2;",
+      "VMRecoveryServiceVaultPolicyName": "AFW-DemoPolicy"
+    },
+    "resources": [
+      {
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2018-12-01",
+        "name": "[variables('networkSecurityGroups_NSGBackendEUS_name')]",
+        "location": "eastus2",
+        "properties": {
+          "securityRules": []
+        }
+      },
+      {
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2018-12-01",
+        "name": "[variables('networkSecurityGroups_NSGBackendWE_name')]",
+        "location": "westeurope",
+        "properties": {
+          "securityRules": []
+        }
+      },
+      {
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2018-12-01",
+        "name": "[variables('networkSecurityGroups_NSGFrontendEUS_name')]",
+        "location": "eastus2",
+        "properties": {
+          "securityRules": [
+            {
+              "name": "RDP-Allow",
+              "properties": {
+                "protocol": "*",
+                "sourcePortRange": "*",
+                "destinationPortRange": "3389",
+                "sourceAddressPrefix": "[parameters('ClientSourcePIP')]",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 100,
+                "direction": "Inbound",
+                "sourcePortRanges": [],
+                "destinationPortRanges": [],
+                "sourceAddressPrefixes": [],
+                "destinationAddressPrefixes": []
+              }
+            },
+            {
+              "name": "HTTP-Allow",
+              "properties": {
+                "protocol": "*",
+                "sourcePortRange": "*",
+                "destinationPortRange": "80",
+                "sourceAddressPrefix": "*",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 110,
+                "direction": "Inbound",
+                "sourcePortRanges": [],
+                "destinationPortRanges": [],
+                "sourceAddressPrefixes": [],
+                "destinationAddressPrefixes": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2018-12-01",
+        "name": "[variables('networkSecurityGroups_NSGFrontendWE_name')]",
+        "location": "westeurope",
+        "properties": {
+          "securityRules": [
+            {
+              "name": "RDP-Allow",
+              "properties": {
+                "protocol": "*",
+                "sourcePortRange": "*",
+                "destinationPortRange": "3389",
+                "sourceAddressPrefix": "[parameters('ClientSourcePIP')]",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 100,
+                "direction": "Inbound",
+                "sourcePortRanges": [],
+                "destinationPortRanges": [],
+                "sourceAddressPrefixes": [],
+                "destinationAddressPrefixes": []
+              }
+            },
+            {
+              "name": "HTTP-Allow",
+              "properties": {
+                "protocol": "*",
+                "sourcePortRange": "*",
+                "destinationPortRange": "80",
+                "sourceAddressPrefix": "*",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 110,
+                "direction": "Inbound",
+                "sourcePortRanges": [],
+                "destinationPortRanges": [],
+                "sourceAddressPrefixes": [],
+                "destinationAddressPrefixes": []
+              }
+            }
+          ]
+        }
+      },
+  
+      {
+        "type": "Microsoft.Network/virtualNetworks",
+        "apiVersion": "2018-12-01",
+        "name": "[variables('virtualNetworks_vneteus_name')]",
+        "location": "eastus2",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGFrontendEUS_name'))]",
+          "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGBackendEUS_name'))]"
+        ],
+        "properties": {
+          "addressSpace": {
+            "addressPrefixes": [
+              "10.1.0.0/16"
+            ]
+          },
+          "subnets": [
+            {
+              "name": "Frontend",
+              "properties": {
+                "addressPrefix": "10.1.0.0/24",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGFrontendEUS_name'))]"
+                },
+                "serviceEndpoints": [],
+                "delegations": []
+              }
+            },
+            {
+              "name": "Backend",
+              "properties": {
+                "addressPrefix": "10.1.1.0/24",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGBackendEUS_name'))]"
+                },
+                "serviceEndpoints": [],
+                "delegations": []
+              }
+            }
+          ],
+          "enableDdosProtection": false,
+          "enableVmProtection": false
+        }
+      },
+  
+      {
+        "type": "Microsoft.Network/virtualNetworks",
+        "apiVersion": "2018-12-01",
+        "name": "[variables('virtualNetworks_vnetwe_name')]",
+        "location": "westeurope",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGFrontendWE_name'))]",
+          "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGBackendWE_name'))]"
+        ],
+        "properties": {
+          "addressSpace": {
+            "addressPrefixes": [
+              "10.0.0.0/16"
+            ]
+          },
+          "subnets": [
+            {
+              "name": "Frontend",
+              "properties": {
+                "addressPrefix": "10.0.0.0/24",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGFrontendWE_name'))]"
+                },
+                "serviceEndpoints": [],
+                "delegations": []
+              }
+            },
+            {
+              "name": "Backend",
+              "properties": {
+                "addressPrefix": "10.0.1.0/24",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroups_NSGBackendWE_name'))]"
+                },
+                "serviceEndpoints": [],
+                "delegations": []
+              }
+            }
+          ],
+          "enableDdosProtection": false,
+          "enableVmProtection": false
+        }
+      },
+  
+      {
+        "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+        "apiVersion": "2018-12-01",
+        "name": "[concat(variables('virtualNetworks_vneteus_name'), '/PeeringEUStoWE')]",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vneteus_name'))]",
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vnetwe_name'))]"
+        ],
+        "properties": {
+          "remoteVirtualNetwork": {
+            "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vnetwe_name'))]"
+          },
+          "allowVirtualNetworkAccess": true,
+          "allowForwardedTraffic": false,
+          "allowGatewayTransit": false,
+          "useRemoteGateways": false,
+          "remoteAddressSpace": {
+            "addressPrefixes": [
+              "10.0.0.0/16"
+            ]
+          }
+        }
+      },
+  
+      {
+        "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+        "apiVersion": "2018-12-01",
+        "name": "[concat(variables('virtualNetworks_vnetwe_name'), '/PeeringWEtoEUS')]",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vnetwe_name'))]",
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vneteus_name'))]"
+        ],
+        "properties": {
+          "remoteVirtualNetwork": {
+            "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vneteus_name'))]"
+          },
+          "allowVirtualNetworkAccess": true,
+          "allowForwardedTraffic": false,
+          "allowGatewayTransit": false,
+          "useRemoteGateways": false,
+          "remoteAddressSpace": {
+            "addressPrefixes": [
+              "10.1.0.0/16"
+            ]
+          }
+        }
+      },
+  
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "type": "Microsoft.Network/trafficManagerProfiles",
+        "apiVersion": "2018-04-01",
+        "name": "[variables('trafficManagerProfiles_demotraffikmanager_name')]",
+        "location": "global",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmwe_ip_name'))]",
+          "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmeus_ip_name'))]"
+        ],
+        "properties": {
+          "profileStatus": "Enabled",
+          "trafficRoutingMethod": "Performance",
+          "dnsConfig": {
+            "relativeName": "[variables('trafficManagerProfiles_demotraffikmanager_name')]",
+            "ttl": 60
+          },
+          "monitorConfig": {
+            "protocol": "HTTP",
+            "port": 80,
+            "path": "/",
+            "intervalInSeconds": 30,
+            "toleratedNumberOfFailures": 3,
+            "timeoutInSeconds": 10
+          },
+          "endpoints": [
+            {
+              "id": "[concat(resourceId('Microsoft.Network/trafficManagerProfiles', variables('trafficManagerProfiles_demotraffikmanager_name')), '/azureEndpoints/demovmwe')]",
+              "name": "demovmwe",
+              "type": "Microsoft.Network/trafficManagerProfiles/azureEndpoints",
+              "properties": {
+                "endpointStatus": "Enabled",
+                "targetResourceId": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmwe_ip_name'))]",
+                "target": "demovmwe.westeurope.cloudapp.azure.com",
+                "weight": 1,
+                "priority": 1,
+                "endpointLocation": "West Europe"
+              }
+            },
+            {
+              "id": "[concat(resourceId('Microsoft.Network/trafficManagerProfiles', variables('trafficManagerProfiles_demotraffikmanager_name')), '/azureEndpoints/demovmeus')]",
+              "name": "demovmeus",
+              "type": "Microsoft.Network/trafficManagerProfiles/azureEndpoints",
+              "properties": {
+                "endpointStatus": "Enabled",
+                "targetResourceId": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmeus_ip_name'))]",
+                "target": "demovmeus.eastus2.cloudapp.azure.com",
+                "weight": 1,
+                "priority": 2,
+                "endpointLocation": "East US2"
+              }
+            }
+          ],
+          "trafficViewEnrollmentStatus": "Disabled",
+          "maxReturn": 0
+        }
+      },
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "name": "[variables('nicname_vm_we')]",
+        "type": "Microsoft.Network/networkInterfaces",
+        "location": "westeurope",
+        "apiVersion": "2016-03-30",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vnetwe_name'))]",
+          "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmwe_ip_name'))]"
+        ],
+        "properties": {
+          "ipConfigurations": [
+            {
+              "name": "ipconfig1",
+              "properties": {
+                "privateIPAllocationMethod": "Dynamic",
+                "subnet": {
+                  "id": "[variables('demovmwe01SubnetRef')]"
+                },
+                "publicIPAddress": {
+                  "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmwe_ip_name'))]"
+                }
+              }
+            }
+          ]
+        }
+      },
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "name": "[variables('nicname_vm_eus')]",
+        "type": "Microsoft.Network/networkInterfaces",
+        "location": "eastus2",
+        "apiVersion": "2016-03-30",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworks_vneteus_name'))]",
+          "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmeus_ip_name'))]"
+        ],
+        "properties": {
+          "ipConfigurations": [
+            {
+              "name": "ipconfig1",
+              "properties": {
+                "privateIPAllocationMethod": "Dynamic",
+                "subnet": {
+                  "id": "[variables('demovmEUSSubnetRef')]"
+                },
+                "publicIPAddress": {
+                  "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddresses_demovmeus_ip_name'))]"
+                }
+              }
+            }
+          ]
+        }
+      },
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "name": "[variables('publicIPAddresses_demovmwe_ip_name')]",
+        "type": "Microsoft.Network/publicIPAddresses",
+        "location": "westeurope",
+        "apiVersion": "2016-03-30",
+        "dependsOn": [],
+        "properties": {
+          "publicIPAllocationMethod": "Dynamic",
+          "dnsSettings": {
+            "domainNameLabel": "[variables('publicIPAddresses_demovmwe_ip_name')]"
+          }
+        }
+      },
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "name": "[variables('publicIPAddresses_demovmeus_ip_name')]",
+        "type": "Microsoft.Network/publicIPAddresses",
+        "location": "eastus2",
+        "apiVersion": "2016-03-30",
+        "dependsOn": [],
+        "properties": {
+          "publicIPAllocationMethod": "Dynamic",
+          "dnsSettings": {
+            "domainNameLabel": "[variables('publicIPAddresses_demovmwe_ip_name')]"
+          }
+        }
+      },
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "type": "Microsoft.Compute/virtualMachines",
+        "apiVersion": "2018-06-01",
+        "name": "[parameters('VMWEName')]",
+        "location": "westeurope",
+        "dependsOn": [
+          "[concat('Microsoft.Network/networkInterfaces/', variables('nicname_vm_we'))]"
+        ],
+        "properties": {
+          "hardwareProfile": {
+            "vmSize": "Standard_DS2_v2"
+          },
+          "storageProfile": {
+            "osDisk": {
+              "name": "[concat(tolower(parameters('VMWEName')),'osdisk')]",
+              "createOption": "FromImage",
+              "managedDisk": {
+                "storageAccountType": "Premium_LRS"
+              }
+            },
+            "imageReference": {
+              "publisher": "MicrosoftWindowsServer",
+              "offer": "WindowsServer",
+              "sku": "2016-Datacenter",
+              "version": "latest"
+            }
+          },
+          "networkProfile": {
+            "networkInterfaces": [
+              {
+                "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicname_vm_we'))]"
+              }
+            ]
+          },
+          "osProfile": {
+            "computerName": "[parameters('VMWEName')]",
+            "adminUsername": "[parameters('VMadminusername')]",
+            "adminPassword": "[parameters('VMadminPassword')]",
+            "windowsConfiguration": {
+              "enableAutomaticUpdates": true,
+              "provisionVmAgent": true
+            }
+          }
+        },
+        "resources": [
+          {
+            "type": "extensions",
+            "name": "Microsoft.Powershell.DSC",
+            "apiVersion": "2017-03-30",
+            "location": "westeurope",
+            "dependsOn": [
+              "[concat('Microsoft.Compute/virtualMachines/', parameters('VMWEName'))]"
+            ],
+            "properties": {
+              "publisher": "Microsoft.Powershell",
+              "type": "DSC",
+              "typeHandlerVersion": "2.75",
+              "autoUpgradeMinorVersion": true,
+              "protectedSettings": {
+                "Items": {
+                  "registrationKeyPrivate": "[variables('dsckey')]"
+                }
+              },
+              "settings": {
+                "modulesUrl": "",
+                "Properties": [
+                  {
+                    "Name": "RegistrationKey",
+                    "Value": {
+                      "UserName": "PLACEHOLDER_DONOTUSE",
+                      "Password": "PrivateSettingsRef:registrationKeyPrivate"
+                    },
+                    "TypeName": "System.Management.Automation.PSCredential"
+                  },
+                  {
+                    "Name": "RegistrationUrl",
+                    "Value": "[variables('dscurl')]",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "NodeConfigurationName",
+                    "Value": "dscwe.WebServerConfig",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "ConfigurationMode",
+                    "Value": "ApplyandAutoCorrect",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "RebootNodeIfNeeded",
+                    "Value": true,
+                    "TypeName": "System.Boolean"
+                  },
+                  {
+                    "Name": "ActionAfterReboot",
+                    "Value": "ContinueConfiguration",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "ConfigurationModeFrequencyMins",
+                    "Value": "[variables('configurationModeFrequencyMins')]",
+                    "TypeName": "System.Int32"
+                  },
+                  {
+                    "Name": "RefreshFrequencyMins",
+                    "Value": "[variables('refreshFrequencyMins')]",
+                    "TypeName": "System.Int32"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2017-12-01",
+            "name": "[concat(parameters('VMWEName'),'/DependencyAgentWindows')]",
+            "location": "westeurope",
+            "dependsOn": [
+              "[concat('Microsoft.Compute/virtualMachines/', parameters('VMWEName'))]"
+            ],
+            "properties": {
+              "publisher": "Microsoft.Azure.Monitoring.DependencyAgent",
+              "type": "DependencyAgentWindows",
+              "typeHandlerVersion": "9.5",
+              "autoUpgradeMinorVersion": true
+            }
+          },
+          {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2017-12-01",
+            "name": "[concat(parameters('VMWEName'),'/MMAExtension')]",
+            "location": "westeurope",
+            "dependsOn": [
+              "[concat('Microsoft.Compute/virtualMachines/', parameters('VMWEName'))]"
+            ],
+            "properties": {
+              "publisher": "Microsoft.EnterpriseCloud.Monitoring",
+              "type": "MicrosoftMonitoringAgent",
+              "typeHandlerVersion": "1.0",
+              "autoUpgradeMinorVersion": true,
+              "settings": {
+                "workspaceId": "[reference(variables('workspaceResourceId'), '2015-03-20').customerId]",
+                "stopOnMultipleConnections": true
+              },
+              "protectedSettings": {
+                "workspaceKey": "[listKeys(variables('workspaceResourceId'), '2015-03-20').primarySharedKey]"
+              }
+            }
+          }
+        ]
+      },
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "type": "microsoft.devtestlab/schedules",
+        "apiVersion": "2018-09-15",
+        "name": "[concat('shutdown-computevm-',parameters('VMWEName'))]",
+        "location": "westeurope",
+        "dependsOn": [
+          "[concat('Microsoft.Compute/virtualMachines/', parameters('VMWEName'))]"
+        ],
+        "properties": {
+          "status": "Enabled",
+          "taskType": "ComputeVmShutdownTask",
+          "dailyRecurrence": {
+            "time": "1900"
+          },
+          "timeZoneId": "Central European Standard Time",
+          "notificationSettings": {
+            "status": "Disabled",
+            "timeInMinutes": 30
+          },
+          "targetResourceId": "[resourceId('Microsoft.Compute/virtualMachines', parameters('VMWEName'))]"
+        }
+      },
+  
+      {
+        "apiVersion": "2017-05-10",
+        "name": "[concat(parameters('VMWEName'), 'AddtoBackup')]",
+        "type": "Microsoft.Resources/deployments",
+        "resourceGroup": "[variables('VMRecoveryServiceVaultResgroup')]",
+        "properties": {
+          "mode": "Incremental",
+          "template": {
+            "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {},
+            "variables": {},
+            "resources": [
+              {
+                "name": "[concat(variables('VMRecoveryServiceVaultName'), '/', variables('backupFabric'), '/', variables('v2VmContainer'), concat(resourceGroup().Name,';',parameters('VMWEName')), '/', variables('v2Vm'), concat(resourceGroup().Name,';',parameters('VMWEName')))]",
+                "apiVersion": "2016-06-01",
+                "location": "westeurope",
+                "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems",
+                "properties": {
+                  "protectedItemType": "[variables('v2VmType')]",
+                  "policyId": "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies',variables('VMRecoveryServiceVaultName'),variables('VMRecoveryServiceVaultPolicyName') )]",
+                  "sourceResourceId": "[resourceId(subscription().subscriptionId,resourceGroup().Name,'Microsoft.Compute/virtualMachines',parameters('VMWEName'))]"
+                }
+              }
+            ]
+          }
+        },
+        "dependsOn": [
+          "[concat('Microsoft.Compute/virtualMachines/', concat(parameters('VMWEName')))]"
+        ]
+      },
+  
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "type": "Microsoft.Compute/virtualMachines",
+        "apiVersion": "2018-06-01",
+        "name": "[parameters('VMEUSName')]",
+        "location": "eastus2",
+        "dependsOn": [
+          "[concat('Microsoft.Network/networkInterfaces/', variables('nicname_vm_eus'))]"
+        ],
+        "properties": {
+          "hardwareProfile": {
+            "vmSize": "Standard_DS2_v2"
+          },
+          "storageProfile": {
+            "osDisk": {
+              "name": "[concat(tolower(parameters('VMEUSName')),'osdisk')]",
+              "createOption": "FromImage",
+              "managedDisk": {
+                "storageAccountType": "Premium_LRS"
+              }
+            },
+            "imageReference": {
+              "publisher": "MicrosoftWindowsServer",
+              "offer": "WindowsServer",
+              "sku": "2016-Datacenter",
+              "version": "latest"
+            }
+          },
+          "networkProfile": {
+            "networkInterfaces": [
+              {
+                "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicname_vm_eus'))]"
+              }
+            ]
+          },
+          "osProfile": {
+            "computerName": "[parameters('VMEUSName')]",
+            "adminUsername": "[parameters('VMadminusername')]",
+            "adminPassword": "[parameters('VMadminPassword')]",
+            "windowsConfiguration": {
+              "enableAutomaticUpdates": true,
+              "provisionVmAgent": true
+            }
+          }
+        },
+        "resources": [
+          {
+            "type": "extensions",
+            "name": "Microsoft.Powershell.DSC",
+            "apiVersion": "2017-03-30",
+            "location": "eastus2",
+            "dependsOn": [
+              "[concat('Microsoft.Compute/virtualMachines/', parameters('VMEUSName'))]"
+            ],
+            "properties": {
+              "publisher": "Microsoft.Powershell",
+              "type": "DSC",
+              "typeHandlerVersion": "2.75",
+              "autoUpgradeMinorVersion": true,
+              "protectedSettings": {
+                "Items": {
+                  "registrationKeyPrivate": "[variables('dsckey')]"
+                }
+              },
+              "settings": {
+                "modulesUrl": "",
+                "Properties": [
+                  {
+                    "Name": "RegistrationKey",
+                    "Value": {
+                      "UserName": "PLACEHOLDER_DONOTUSE",
+                      "Password": "PrivateSettingsRef:registrationKeyPrivate"
+                    },
+                    "TypeName": "System.Management.Automation.PSCredential"
+                  },
+                  {
+                    "Name": "RegistrationUrl",
+                    "Value": "[variables('dscurl')]",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "NodeConfigurationName",
+                    "Value": "dsceus.WebServerConfig",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "ConfigurationMode",
+                    "Value": "ApplyandAutoCorrect",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "RebootNodeIfNeeded",
+                    "Value": true,
+                    "TypeName": "System.Boolean"
+                  },
+                  {
+                    "Name": "ActionAfterReboot",
+                    "Value": "ContinueConfiguration",
+                    "TypeName": "System.String"
+                  },
+                  {
+                    "Name": "ConfigurationModeFrequencyMins",
+                    "Value": "[variables('configurationModeFrequencyMins')]",
+                    "TypeName": "System.Int32"
+                  },
+                  {
+                    "Name": "RefreshFrequencyMins",
+                    "Value": "[variables('refreshFrequencyMins')]",
+                    "TypeName": "System.Int32"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2017-12-01",
+            "name": "[concat(parameters('VMEUSName'),'/DependencyAgentWindows')]",
+            "location": "eastus2",
+            "dependsOn": [
+              "[concat('Microsoft.Compute/virtualMachines/', parameters('VMEUSName'))]"
+            ],
+            "properties": {
+              "publisher": "Microsoft.Azure.Monitoring.DependencyAgent",
+              "type": "DependencyAgentWindows",
+              "typeHandlerVersion": "9.5",
+              "autoUpgradeMinorVersion": true
+            }
+          },
+          {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2017-12-01",
+            "name": "[concat(parameters('VMEUSName'),'/MMAExtension')]",
+            "location": "eastus2",
+            "dependsOn": [
+              "[concat('Microsoft.Compute/virtualMachines/', parameters('VMEUSName'))]"
+            ],
+            "properties": {
+              "publisher": "Microsoft.EnterpriseCloud.Monitoring",
+              "type": "MicrosoftMonitoringAgent",
+              "typeHandlerVersion": "1.0",
+              "autoUpgradeMinorVersion": true,
+              "settings": {
+                "workspaceId": "[reference(variables('workspaceResourceId'), '2015-03-20').customerId]",
+                "stopOnMultipleConnections": true
+              },
+              "protectedSettings": {
+                "workspaceKey": "[listKeys(variables('workspaceResourceId'), '2015-03-20').primarySharedKey]"
+              }
+            }
+          }
+        ]
+      },
+  
+      {
+        "condition": "[equals(parameters('DeploymentType'), 'FullDeployment')]",
+        "type": "microsoft.devtestlab/schedules",
+        "apiVersion": "2018-09-15",
+        "name": "[concat('shutdown-computevm-',parameters('VMEUSName'))]",
+        "location": "eastus2",
+        "dependsOn": [
+          "[concat('Microsoft.Compute/virtualMachines/', parameters('VMEUSName'))]"
+        ],
+        "properties": {
+          "status": "Enabled",
+          "taskType": "ComputeVmShutdownTask",
+          "dailyRecurrence": {
+            "time": "1900"
+          },
+          "timeZoneId": "Central European Standard Time",
+          "notificationSettings": {
+            "status": "Disabled",
+            "timeInMinutes": 30
+          },
+          "targetResourceId": "[resourceId('Microsoft.Compute/virtualMachines', parameters('VMEUSName'))]"
+        }
+      },
+  
+      {
+        "apiVersion": "2017-05-10",
+        "name": "[concat(parameters('VMEUSName'), 'AddtoBackup')]",
+        "type": "Microsoft.Resources/deployments",
+        "resourceGroup": "[variables('VMRecoveryServiceVaultResgroup')]",
+        "properties": {
+          "mode": "Incremental",
+          "template": {
+            "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {},
+            "variables": {},
+            "resources": [
+              {
+                "name": "[concat(variables('VMRecoveryServiceVaultNameEUS'), '/', variables('backupFabric'), '/', variables('v2VmContainer'), concat(resourceGroup().Name,';',parameters('VMEUSName')), '/', variables('v2Vm'), concat(resourceGroup().Name,';',parameters('VMEUSName')))]",
+                "apiVersion": "2016-06-01",
+                "location": "eastus2",
+                "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems",
+                "properties": {
+                  "protectedItemType": "[variables('v2VmType')]",
+                  "policyId": "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies',variables('VMRecoveryServiceVaultNameEUS'),variables('VMRecoveryServiceVaultPolicyName') )]",
+                  "sourceResourceId": "[resourceId(subscription().subscriptionId,resourceGroup().Name,'Microsoft.Compute/virtualMachines',parameters('VMEUSName'))]"
+                }
+              }
+            ]
+          }
+        },
+        "dependsOn": [
+          "[concat('Microsoft.Compute/virtualMachines/', concat(parameters('VMEUSName')))]"
+        ]
+      }
+    ]
+  }

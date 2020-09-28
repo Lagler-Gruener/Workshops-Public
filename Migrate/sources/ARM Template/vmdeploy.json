@@ -1,0 +1,395 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "studentname": {
+        "type": "string",
+        "defaultValue": "tn1",
+        "minLength": 1
+      },
+      "usertype": {
+        "type": "string",
+        "defaultValue": "student",
+        "allowedValues": [
+          "student",
+          "trainer"
+        ],
+        "minLength": 1
+      }
+    },
+    "variables": {
+      "VNETName": "[concat(variables('HyperVHostName'),'-vnet')]",
+      "VNETPrefix": "10.0.0.0/16",
+      "VNETSubnetName": "Sub-VMHOST",
+      "VNETSubnetPrefix": "10.0.0.0/24",
+      "VNETBastionSubnetName": "AzureBastionSubnet",
+      "VNETBastionSubnetPrefix": "10.0.1.0/24",
+      "VNETNSGName": "[concat(variables('HyperVHostName'),'-nsg')]",
+      "VMPUBIPName": "[concat(variables('HyperVHostName'), '-pip')]",
+      "BastionVnetID": "[resourceId('Microsoft.Network/virtualNetworks', variables('VNETName'))]",
+      "BastionSubnetRef": "[concat(variables('BastionVnetID'), '/subnets/', variables('VNETBastionSubnetName'))]",
+      "Bastion-PUBIPName": "[concat('vm-mig-', parameters('studentname'), '-bastion-pip')]",
+      "BastionName": "[concat('vm-mig-', parameters('studentname'), '-bastion')]",
+      "HyperVHostName": "[concat('vm-mig-', parameters('studentname'))]",
+      "HyperVHostAdminUserName": "demouser",
+      "HyperVHostAdminPassword": "AzFundamentalsWs01",
+      "HyperVHostImagePublisher": "MicrosoftWindowsServer",
+      "HyperVHostImageOffer": "WindowsServer",
+      "HyperVHostWindowsOSVersion": "2016-Datacenter",
+      "HyperVHostVmSize": "Standard_D8_v3",
+      "HyperVHostVnetID": "[resourceId('Microsoft.Network/virtualNetworks', variables('VNETName'))]",
+      "HyperVHostSubnetRef": "[concat(variables('HyperVHostVnetID'), '/subnets/', variables('VNETSubnetName'))]",
+      "HyperVHostNicName": "[concat(variables('HyperVHostName'), '-nic')]",
+      "HyperVHost-OSDiscName": "[concat(variables('HyperVHostName'), '-osdisc')]",
+      "DscUrl": "%DSCURL%",
+      "DscKey": "%DSCKEY",
+      "DscConfigurationModeFrequencyMins": "30",
+      "DscRefreshFrequencyMins": "45"
+    },
+    "resources": [
+      {
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2019-11-01",
+        "name": "[variables('VNETNSGName')]",
+        "location": "[resourceGroup().location]",
+        "properties": {
+        "securityRules": [
+            {
+            "name": "AllowPort_80",
+            "properties": {
+              "protocol": "*",
+                "sourcePortRange": "*",
+                "destinationPortRange": "80",
+                "sourceAddressPrefix": "Internet",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 100,
+                "direction": "Inbound",
+                "sourcePortRanges": [],
+                "destinationPortRanges": [],
+                "sourceAddressPrefixes": [],
+                "destinationAddressPrefixes": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "[variables('VNETName')]",
+        "type": "Microsoft.Network/virtualNetworks",
+        "location": "[resourceGroup().location]",
+        "apiVersion": "2016-03-30",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/networkSecurityGroups', variables('VNETNSGName'))]"
+        ],
+        "properties": {
+          "addressSpace": {
+            "addressPrefixes": [
+              "[variables('VNETPrefix')]"
+            ]
+          },
+          "subnets": [
+            {
+              "name": "[variables('VNETSubnetName')]",
+              "properties": {
+                "addressPrefix": "[variables('VNETSubnetPrefix')]",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('VNETNSGName'))]"
+                }
+              }
+            },
+            {
+              "name": "[variables('VNETBastionSubnetName')]",
+              "properties": {
+                "addressPrefix": "[variables('VNETBastionSubnetPrefix')]" 
+              }
+            }
+          ]
+        }
+      },      
+      {
+            "apiVersion": "2019-02-01",
+            "type": "Microsoft.Network/publicIpAddresses",
+            "name": "[variables('Bastion-PUBIPName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard"
+            },
+            "properties": {
+                "publicIPAllocationMethod": "Static"
+            }
+      },
+      {
+            "apiVersion": "2018-10-01",
+            "type": "Microsoft.Network/bastionHosts",
+            "name": "[variables('BastionName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', variables('Bastion-PUBIPName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('VNETName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "IpConf",
+                        "properties": {
+                            "subnet": {
+                                "id": "[variables('BastionSubnetRef')]"
+                            },
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('Bastion-PUBIPName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+      },
+      {
+        "type": "Microsoft.Network/publicIPAddresses",
+        "apiVersion": "2019-11-01",
+        "name": "[variables('VMPUBIPName')]",
+        "location": "[resourceGroup().location]",        
+        "sku": {
+          "name": "Basic"
+        },
+        "properties": {  
+          "publicIPAllocationMethod": "Dynamic",    
+          "dnsSettings": {
+            "domainNameLabel": "[variables('VMPUBIPName')]",
+            "fqdn": "[concat(variables('VMPUBIPName'), '.westeurope.cloudapp.azure.com')]"
+          }          
+        }
+      },
+      {
+        "name": "[variables('HyperVHostNicName')]",
+        "type": "Microsoft.Network/networkInterfaces",
+        "location": "[resourceGroup().location]",
+        "apiVersion": "2017-10-01",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('VNETName'))]",
+          "[resourceId('Microsoft.Network/publicIPAddresses', variables('VMPUBIPName'))]"
+        ],
+        "properties": {
+          "ipConfigurations": [
+            {
+              "name": "ipconfig1",
+              "properties": {
+                "privateIPAllocationMethod": "Dynamic",
+                "publicIPAddress": {
+                  "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('VMPUBIPName'))]"
+                },
+                "subnet": {
+                  "id": "[variables('HyperVHostSubnetRef')]"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "[variables('HyperVHostName')]",
+        "type": "Microsoft.Compute/virtualMachines",
+        "location": "[resourceGroup().location]",
+        "apiVersion": "2018-04-01",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/networkInterfaces', variables('HyperVHostNicName'))]"
+        ],
+        "properties": {
+          "hardwareProfile": {
+            "vmSize": "[variables('HyperVHostVmSize')]"
+          },
+          "osProfile": {
+            "computerName": "[variables('HyperVHostName')]",
+            "adminUsername": "[variables('HyperVHostAdminUsername')]",
+            "adminPassword": "[variables('HyperVHostAdminPassword')]"
+          },
+          "storageProfile": {
+            "imageReference": {
+              "publisher": "[variables('HyperVHostImagePublisher')]",
+              "offer": "[variables('HyperVHostImageOffer')]",
+              "sku": "[variables('HyperVHostWindowsOSVersion')]",
+              "version": "latest"
+            },
+            "osDisk": {
+              "createOption": "FromImage",
+              "name": "[variables('HyperVHost-OSDiscName')]",
+              "diskSizeGB": 127,
+              "managedDisk": {
+                "storageAccountType": "StandardSSD_LRS"              
+              }
+            }
+          },
+          "networkProfile": {
+            "networkInterfaces": [
+              {
+                "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('HyperVHostNicName'))]"
+              }
+            ]
+          }
+        },
+        "resources": [
+        {
+          "condition": "[equals(parameters('usertype'),'student')]",
+          "type": "extensions",
+          "name": "Microsoft.Powershell.DSCStudent",
+          "apiVersion": "2017-03-30",
+          "location": "[resourceGroup().location]",
+          "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', variables('HyperVHostName'))]"
+          ],
+          "properties": {
+            "publisher": "Microsoft.Powershell",
+            "type": "DSC",
+            "typeHandlerVersion": "2.75",
+            "autoUpgradeMinorVersion": true,
+            "protectedSettings": {
+              "Items": {
+                "registrationKeyPrivate": "[variables('DscKey')]"
+              }
+            },
+            "settings": {
+              "modulesUrl": "",
+              "Properties": [
+                {
+                  "Name": "RegistrationKey",
+                  "Value": {
+                    "UserName": "PLACEHOLDER_DONOTUSE",
+                    "Password": "PrivateSettingsRef:registrationKeyPrivate"
+                  },
+                  "TypeName": "System.Management.Automation.PSCredential"
+                },
+                {
+                  "Name": "RegistrationUrl",
+                  "Value": "[variables('DscUrl')]",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "NodeConfigurationName",
+                  "Value": "ACPDemoMigrateWS.ConfigureHyperV",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "ConfigurationMode",
+                  "Value": "ApplyandMonitor",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "RebootNodeIfNeeded",
+                  "Value": true,
+                  "TypeName": "System.Boolean"
+                },
+                {
+                  "Name": "ActionAfterReboot",
+                  "Value": "ContinueConfiguration",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "configurationModeFrequencyMins",
+                  "Value": "[variables('DscConfigurationModeFrequencyMins')]",
+                  "TypeName": "System.Int32"
+                },
+                {
+                  "Name": "refreshFrequencyMins",
+                  "Value": "[variables('DscRefreshFrequencyMins')]",
+                  "TypeName": "System.Int32"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "condition": "[equals(parameters('usertype'),'trainer')]",
+          "type": "extensions",
+          "name": "Microsoft.Powershell.DSCTrainer",
+          "apiVersion": "2017-03-30",
+          "location": "[resourceGroup().location]",
+          "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', variables('HyperVHostName'))]"
+          ],
+          "properties": {
+            "publisher": "Microsoft.Powershell",
+            "type": "DSC",
+            "typeHandlerVersion": "2.75",
+            "autoUpgradeMinorVersion": true,
+            "protectedSettings": {
+              "Items": {
+                "registrationKeyPrivate": "[variables('DscKey')]"
+              }
+            },
+            "settings": {
+              "modulesUrl": "",
+              "Properties": [
+                {
+                  "Name": "RegistrationKey",
+                  "Value": {
+                    "UserName": "PLACEHOLDER_DONOTUSE",
+                    "Password": "PrivateSettingsRef:registrationKeyPrivate"
+                  },
+                  "TypeName": "System.Management.Automation.PSCredential"
+                },
+                {
+                  "Name": "RegistrationUrl",
+                  "Value": "[variables('DscUrl')]",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "NodeConfigurationName",
+                  "Value": "ACPDemoMigrateWSTrainer.ConfigureHyperV",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "ConfigurationMode",
+                  "Value": "ApplyandMonitor",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "RebootNodeIfNeeded",
+                  "Value": true,
+                  "TypeName": "System.Boolean"
+                },
+                {
+                  "Name": "ActionAfterReboot",
+                  "Value": "ContinueConfiguration",
+                  "TypeName": "System.String"
+                },
+                {
+                  "Name": "configurationModeFrequencyMins",
+                  "Value": "[variables('DscConfigurationModeFrequencyMins')]",
+                  "TypeName": "System.Int32"
+                },
+                {
+                  "Name": "refreshFrequencyMins",
+                  "Value": "[variables('DscRefreshFrequencyMins')]",
+                  "TypeName": "System.Int32"
+                }
+              ]
+            }
+          }
+        }
+        ]
+      },
+      {
+      "type": "microsoft.devtestlab/schedules",
+      "apiVersion": "2018-09-15",
+      "name": "[concat('shutdown-computevm-',variables('HyperVHostName'))]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', variables('HyperVHostName'))]"
+      ],
+      "properties": {
+        "status": "Enabled",
+        "taskType": "ComputeVmShutdownTask",
+        "dailyRecurrence": {
+          "time": "1900"
+        },
+        "timeZoneId": "Central European Standard Time",
+        "notificationSettings": {
+          "status": "Disabled",
+          "timeInMinutes": 30
+        },
+        "targetResourceId": "[resourceId('Microsoft.Compute/virtualMachines', variables('HyperVHostName'))]"
+      }
+    }
+    ],
+    "outputs": {}
+  }

@@ -1,0 +1,16 @@
+#Netzwerk auf private stellen
+Get-NetConnectionProfile | where {$_.NetworkCategory -ne "Private"} | Set-NetConnectionProfile -NetworkCategory Private 
+
+#Firewall deaktivieren
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+
+#MMA Agent und Dependency Agent installieren
+cd /tmp
+sudo apt-get install python-ctypes
+wget https://raw.githubusercontent.com/Microsoft/OMS-Agent-for-Linux/master/installer/scripts/onboard_agent.sh && sh onboard_agent.sh -w 03e8b3f1-5260-4656-a459-1bb39873c165 -s j1oGVDKi372OlamebBSetns9Qxu4wThli7TADvP6ohRGsgDzy/EKpbgjjMQHr15eEs1u2B9o47DhMP3YJE135Q==
+
+mkdir depagent
+cd depagent
+wget http://aka.ms/dependencyagentlinux
+chmod 777 dependencyagentlinux
+sudo ./dependencyagentlinux
