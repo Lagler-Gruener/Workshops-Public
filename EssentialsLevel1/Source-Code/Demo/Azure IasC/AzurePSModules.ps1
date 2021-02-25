@@ -1,4 +1,4 @@
-Connect-AzAccount
+Login-AzAccount
 
 Get-AzSubscription
 
